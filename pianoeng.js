@@ -53,6 +53,7 @@ function degree(tok, ch) {
   return [r[0] + 7 * oct, r[1] + 12 * oct];
 }
 const SHAPES = {T: '~1 3 5', C: '~1 3 5 7', G: '~3 7', K: '~3 5 7 9', O: '1 8', F: '1 5', S: '1 7', Q: '1 3+', P: '1 5 8', D: '~1 3 5 8'};
+let BASSLOW = 28;            // nota más grave del bajo (E1); con 5 y 6 cuerdas, B0
 const RANGES = {rh: [58, 69], lh: [40, 51], bs: [28, 39], gt: [40, 51]};       // dónde cae la fundamental de referencia
 const VL = {rh: [66, 55, 81], lh: [52, 40, 64], gt: [60, 48, 76], bs: [40, 28, 52], keys: [66, 55, 81]};                  // centro inicial, mínimo y máximo de los acordes enlazados
 
@@ -171,7 +172,7 @@ function expand(P, opt) {
         else { ps = []; for (const t of toks) ps.push(...toneAt(cd, hand, t)); }
         for (const t of gts) gr.push(...toneAt(cd, hand, t));
       } else ps = toneAt(cd, hand, c);
-      if (hand === 'bs') ps = ps.map(p => p.m < 28 ? spell(p.l, p.m + 12) : p);
+      if (hand === 'bs') ps = ps.map(p => p.m < BASSLOW ? spell(p.l, p.m + 12) : p);
       if (hand === 'gt' && !gfr) ps = ps.map(p => p.m < 40 ? spell(p.l, p.m + 12) : p);
       const seen = new Set(); ps = ps.filter(p => !seen.has(p.m) && seen.add(p.m)).sort((a, b) => a.m - b.m);
       const art = cleanHand((P.art || {})[hand]).padEnd(L, '.')[i];
@@ -199,6 +200,11 @@ function expand(P, opt) {
       const lo = Math.min(...r.flatMap(x => x.ps.map(q => q.m)));
       if (Math.max(...l.ps.map(q => q.m)) >= lo && Math.min(...l.ps.map(q => q.m)) - 12 >= 28) drop.add(key(l)); }
     for (const l of hands.lh) if (drop.has(key(l))) l.ps = l.ps.map(q => spell(q.l, q.m - 12)); }
+  // bajo: cada tónica sabe si su acorde es menor o mayor, y cada nota si empieza un acorde nuevo (digitación por cajas)
+  if (hands.bs) { let pc = null; for (const nt of hands.bs) { const c = cs.filter(q => q.s <= nt.s).pop(); nt.cc = !!c && c !== pc; pc = c;
+    if (c && c.ch && c.ch.root && nt.ps.length && mod(nt.ps[0].m - pcL(c.ch.root.l) - c.ch.root.a, 12) === 0) nt.rt = c.ch.minor ? 'm' : 'M'; } }
+  // el consejo del patrón habla de cuerdas, trastes o dedos concretos, o lleva números de dedo impresos: se conserva la digitación de siempre
+  if (hands.bs && ((P.fing && P.fing.bs) || /\b(frets?|strings?|positions?|open|index|middle finger|ring finger|pinky|fingers?|shift(s|ing|ed)?|box|reach(es)?)\b/i.test(P.tip || ''))) for (const nt of hands.bs) nt.keepf = true;
   return {nb, n, M, cs, hands, dyn, key: tr ? transposeKey(P.key || 'C', tr) : (P.key || 'C')};
 }
 
@@ -728,10 +734,50 @@ function ukVoicing(ch, kind, prev, lv, P) {        // rasgueo: las cuatro cuerda
   const notes = best.fr.map((f, s) => ({s, f, p: gSpell(ch, UKSTR[s] + f)})).sort((x, y) => x.p.m - y.p.m);
   return {ps: notes.map(n => n.p), fr: notes.map(n => [n.s, n.f]), avg: best.avg};
 }                    // E1 A1 D2 G2 (al aire)
+// bajo de 5 y 6 cuerdas: la digitación nueva solo se usa si es más cómoda que la de 4 cuerdas; si no, la de 4 en las cuerdas E-A-D-G
 function tabFrets(notes, pos, lv, STR) {
-  STR = STR || BSTR;          // lv 1: prioriza cuerdas al aire; lv ≥ 2: posiciones cerradas en cajas de 4 trastes                    // digitación: posición cómoda y pocos saltos (programación dinámica)
+  if ((STR && STR !== BASSI.strings) || BASSI.strings === BSTR) return tabFrets1(notes, pos, lv, STR);   // la TAB de la partitura y el mástil usan la misma regla
+  const S = BASSI.strings, off = S.indexOf(28), r5 = tabFrets1(notes, pos, lv, S);
+  if ((notes || []).some(n => !n.fr && n.ps && n.ps.length && Math.min(...n.ps.map(q => q.m)) - (n.art === 'b' ? 2 : 0) < 28)) return r5;   // hay notas por debajo del E
+  const r4 = tabFrets1(notes, pos, lv, BSTR), m4 = new Map();
+  for (const [n, q] of r4) m4.set(n, q && [q[0] + off, q[1]].concat(q.length > 2 ? [q[2].map(e => [e[0] + off, e[1]])] : []));
+  const span = r => { const fs = notes.map(n => r.get(n)).filter(q => q && q.length < 3 && q[1] > 0).map(q => q[1]); return fs.length ? Math.max(...fs) - Math.min(...fs) : 0; };
+  const one5 = span(r5) <= 3, one4 = span(m4) <= 3;
+  if (one5 !== one4) return one5 ? r5 : m4;            // la que cabe en una caja de 4 trastes gana siempre
+  return fingScore(notes, r5) < fingScore(notes, m4) - 0.75 ? r5 : m4;
+}
+// lo cómoda que es una digitación (menos es mejor): distancia entre trastes, saltos, cambios de caja dentro de un acorde, la tónica fuera de su sitio
+function fingScore(notes, r) {
+  const fs = []; let pf = null, jumps = 0, moves = 0, viol = 0, box = null, lo = null, hi = null, mid = 0;
+  for (const n of notes) { const q = r.get(n); if (!q) continue; const f = q[1]; if (!f) continue;
+    fs.push(f); if (pf !== null) { const d = Math.abs(f - pf); moves += d; if (d > 4) jumps++; } pf = f;
+    if (n.rt) box = n.rt === 'm' ? [f, f + 3] : [f - 1, f + 2]; else if (box && (f < box[0] || f > box[1])) viol++;
+    if (lo === null || f < hi - 3 || f > lo + 3) { if (lo !== null && !n.cc) mid++; lo = f; hi = f; } else { lo = Math.min(lo, f); hi = Math.max(hi, f); } }
+  return fs.length ? (Math.max(...fs) - Math.min(...fs)) + jumps * 2 + moves * 0.05 + Math.max(...fs) * 0.15 + viol + mid * 1.5 : 0;
+}
+// bajo: dos pasadas; en la segunda, cada nota repetida prefiere el sitio donde más veces se tocó en la primera (la misma nota, en el mismo sitio)
+function tabFrets1(notes, pos, lv, STR) {
+  STR = STR || BSTR; const BASSY = STR.includes(28) && STR.includes(43) && STR.every((v, i) => !i || v - STR[i - 1] === 5);
+  if (!BASSY || (STR.length === 4 && (notes || []).some(n => n.keepf))) return tabFretsDP(notes, pos, lv, STR, null, false, true);   // 4 cuerdas: la digitación de siempre (la del consejo impreso)
+  // 1) una línea que cabe en una caja de 4 trastes (la de su escala) se toca entera ahí, sin mover la mano
+  const seq0 = notes.filter(n => !n.wrapIn && !n.fr);
+  if ((lv || 1) >= 2 && seq0.length) { const r0 = tabFretsDP(notes, pos, lv, STR, null, true); const fs = seq0.map(n => r0.get(n)).filter(q => q && q.length < 3 && q[1] > 0).map(q => q[1]);
+    if (!fs.length || Math.max(...fs) - Math.min(...fs) <= 3) return r0; }
+  // 2) si no cabe: bloques de acorde (la tónica con el dedo 1 en menor y con el 2 en mayor) que se mueven con cada acorde
+  const r1 = tabFretsDP(notes, pos, lv, STR, null);
+  const cnt = new Map(); for (const [n, q] of r1) { if (!q || q.length > 2 || !q[1]) continue; const k = n.ps.map(p => p.m).join(','), w = q[0] + ':' + q[1];
+    const c = cnt.get(k) || new Map(); c.set(w, (c.get(w) || 0) + 1); cnt.set(k, c); }
+  const pref = new Map(); for (const [k, c] of cnt) if (c.size > 1) pref.set(k, [...c.entries()].sort((a, b) => b[1] - a[1])[0][0]);
+  if (!pref.size) return r1;
+  const r2 = tabFretsDP(notes, pos, lv, STR, pref);
+  return fingScore(notes.filter(n => !n.wrapIn && !n.fr), r2) <= fingScore(notes.filter(n => !n.wrapIn && !n.fr), r1) + 0.5 ? r2 : r1;
+}
+function tabFretsDP(notes, pos, lv, STR, PREF, ONEBOX, LEGACY) {
+  STR = STR || BSTR;
+  const BASSY = STR.includes(28) && STR.includes(43) && STR.every((v, i) => !i || v - STR[i - 1] === 5);   // bajo de 4, 5 o 6 cuerdas
+  const NEWF = BASSY && !LEGACY;   // reglas nuevas de digitación (cajas, tónica, la misma nota en el mismo sitio)          // lv 1: prioriza cuerdas al aire; lv ≥ 2: posiciones cerradas en cajas de 4 trastes                    // digitación: posición cómoda y pocos saltos (programación dinámica)
   const seq = notes.filter(n => !n.wrapIn && !n.fr); const cost = [], cx = new Map();
-  const cand0 = n => { const c = cand(n); if (!n.sn) return c; const st = STR.length - n.sn, k = c.filter(q => q[0] === st); return k.length ? k : c; };   // cuerda fijada con str (si se puede)
+  const cand0 = n => { const c = cand(n); if (!n.sn) return c; const st = (BASSY ? STR.indexOf(43) + 1 : STR.length) - n.sn, k = c.filter(q => q[0] === st); return k.length ? k : c; };   // cuerda fijada con str (si se puede)
   const cand = n => { const bd = n.art === 'b' ? 2 : 0;                 // bend: se pisa un tono por debajo de la nota escrita
     const ms = n.ps.map(q => q.m - bd).sort((a, b) => a - b), m = ms[0], c = [];
     for (let s = 0; s < STR.length; s++) { const f = m - STR[s]; if (f < 0 || f > 19) continue;
@@ -755,15 +801,16 @@ function tabFrets(notes, pos, lv, STR) {
     const cur = new Map();
     cs.forEach(([s, f, ex], k) => P0.forEach(p => {
       if (!fits(f, p, ex)) return;
-      const sa = seq[i].art, base = fc(s, f) + (cx.get(cs[k]) || 0) + (sa === 'P' && s < STR.length - 2 ? 3 : 0) + (sa === 'T' && s === STR.length - 1 ? 1.5 : 0);   // slap: pop en D/G, pulgar en E/A/D
+      const sa = seq[i].art, base = fc(s, f) + (cx.get(cs[k]) || 0) + (NEWF && box && !ONEBOX && seq[i].rt && f > 0 ? Math.abs(p - (seq[i].rt === 'm' ? f : f - 1)) * 1.5 : 0)   // tónica: menor, dedo 1; mayor, dedo 2
+        + (PREF && f > 0 && PREF.has(seq[i].ps.map(q => q.m).join(',')) && PREF.get(seq[i].ps.map(q => q.m).join(',')) !== s + ':' + f ? 1.6 : 0) + (sa === 'P' && s < STR.length - 2 ? 3 : 0) + (sa === 'T' && s === STR.length - 1 ? 1.5 : 0);   // slap: pop en D/G, pulgar en E/A/D
       if (!i) { cur.set(k + '|' + p, {c: base + (f ? 0 : 0), bk: null}); return; }
       let best = 1e9, bk = null;
       for (const [key, v] of prev) { const [k0, p0] = key.split('|').map(Number); const [s0] = C[i - 1][k0];
         const f0 = C[i - 1][k0][1], m0 = seq[i - 1].ps[0].m - (seq[i - 1].art === 'b' ? 2 : 0), m1 = seq[i].ps[0].m - (seq[i].art === 'b' ? 2 : 0);   // bend: cuenta la nota pisada
         const crawl = s === s0 && f && f0 && Math.abs(f - f0) <= 2 && Math.abs(m1 - m0) <= 2;      // paso cromático por la misma cuerda: la mano se arrastra un traste
-        const shift = p0 === p ? 0 : ((box ? 2.4 : 1.4) + Math.abs(p - p0) * 0.3) * (crawl ? 0.35 : 1);
-        const oct = STR === BSTR && Math.abs(m1 - m0) === 12 && Math.abs(s - s0) === 2 && Math.abs(f - f0) === 2 ? -3 : 0;   // bajo: octava = dos cuerdas y dos trastes arriba
-        const lig = seq[i].art && 'hp/'.includes(seq[i].art) && s !== s0 ? 40 : 0;   // ligados y slides: la misma cuerda
+        const shift = p0 === p ? 0 : ((box ? 2.4 : 1.4) + Math.abs(p - p0) * 0.3) * (crawl ? 0.35 : 1) * (NEWF && box ? (ONEBOX ? 40 : seq[i].cc ? 1.2 : 3.5) : 1);   // bajo: la mano se queda en su caja y cambia de caja con el acorde
+        const oct = BASSY && Math.abs(m1 - m0) === 12 && Math.abs(s - s0) === 2 && Math.abs(f - f0) === 2 ? -3 : 0;   // bajo: octava = dos cuerdas y dos trastes arriba
+        const lig = seq[i].art && 'hp/'.includes(seq[i].art) && s !== s0 ? (NEWF ? 5000 : 40) : 0;   // ligados y slides: la misma cuerda (con las reglas nuevas, siempre)   // ligados y slides: la misma cuerda
         const same = m1 === m0 && s !== s0 ? 1.5 : 0;     // la misma nota repetida: la misma cuerda
         const c = v.c + shift + Math.abs(s - s0) * 0.12 + base + lig + oct + same; if (c < best) { best = c; bk = key; } }
       cur.set(k + '|' + p, {c: best, bk}); }));
@@ -775,7 +822,7 @@ function tabFrets(notes, pos, lv, STR) {
   for (let i = seq.length - 1; i >= 0; i--) { const k = +key.split('|')[0]; res.set(seq[i], C[i][k]); key = cost[i].get(key).bk; }
   // una nota que se repite poco después vuelve a la misma cuerda y traste, si queda a mano de las notas vecinas
   const sig = n => n.ps.map(q => q.m).join(',') + (n.art === 'b' ? 'b' : ''), lig = n => n && n.art && 'hp/'.includes(n.art);   // una nota con bend no es la misma que la nota real
-  for (let i = 1; i < seq.length; i++) for (let j = i - 1; j >= Math.max(0, i - 6); j--) { if (seq[i].sn) break; if (sig(seq[j]) !== sig(seq[i])) continue;   // una nota con cuerda fijada (str) no se mueve
+  for (let i = 1; i < seq.length; i++) for (let j = i - 1; j >= Math.max(0, i - (NEWF ? 64 : 6)); j--) { if (seq[i].sn) break; if (sig(seq[j]) !== sig(seq[i])) continue;   // una nota con cuerda fijada (str) no se mueve
     const a = res.get(seq[j]), b = res.get(seq[i]); if (!a || !b || a[0] === b[0] || lig(seq[i]) || lig(seq[i + 1])) break;
     const near = [seq[i - 1], seq[i + 1]].filter(Boolean).map(n => res.get(n)).every(r => !r || !r[1] || !a[1] || Math.abs(r[1] - a[1]) <= 4);
     if (near) res.set(seq[i], a); break; }
@@ -784,6 +831,8 @@ function tabFrets(notes, pos, lv, STR) {
   return res;
 }
 function layoutBass(P, o) { return layoutStr(P, o, BASSI); }
+// bajo de 5 cuerdas (B grave) o de 6 (B grave y C aguda): la TAB y la digitación usan esas cuerdas, y las notas por debajo del E ya no suben de octava
+function setBassStrings(n) { BASSI.strings = n === 6 ? [23, 28, 33, 38, 43, 48] : n === 5 ? [23, 28, 33, 38, 43] : BSTR; BASSLOW = BASSI.strings[0]; return BASSI.strings; }
 const BASSI = {hand: 'bs', strings: BSTR, clef: 'bass', name: 'bass'}, GTRI = {hand: 'gt', strings: GSTR, clef: 'treble', name: 'gtr'};
 const UKEI = {hand: 'gt', strings: UKSTR, clef: 'treble', name: 'uke', wr: 0};          // el ukelele se escribe como suena
 function layoutStr(P, o, I) {
@@ -1061,6 +1110,6 @@ function toSVG(Lr, o) {
 }
 function chordHTML(s) { return s.replace(/(^[A-G])b/, '$1♭').replace(/(^[A-G])#/, '$1♯').replace(/\/([A-G])b/, '/$1♭').replace(/\/([A-G])#/, '/$1♯'); }
 
-const API = {expand, layout, systems, layoutBass, systemsBass, layoutGtr, systemsGtr, tabFrets, GSTR, UKSTR, gVoicing, ukVoicing, METERS, toSVG, transposeChords, transposeKey, keyInfo, parseChord, midiOf, figures, chordHTML, PREF};
+const API = {setBassStrings, expand, layout, systems, layoutBass, systemsBass, layoutGtr, systemsGtr, tabFrets, GSTR, UKSTR, gVoicing, ukVoicing, METERS, toSVG, transposeChords, transposeKey, keyInfo, parseChord, midiOf, figures, chordHTML, PREF};
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PIANO = API;
 })(this);

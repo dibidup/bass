@@ -1,3 +1,16 @@
+// bajo, capítulo 1: «una vez dominado…» por título (igual que en el libro)
+const BASS_NOKEYS = new Set(['Alternating fingers', 'Crossing the open strings', 'Raking down', 'Skipping strings', 'Chromatic scale, first position',
+  'E major scale', 'A major scale', 'G major scale', 'C major scale', 'F major scale', 'E natural minor scale', 'A natural minor scale', 'E minor pentatonic',
+  'Open-position arpeggios', 'Major arpeggios: G, C and D', 'Minor arpeggios: Em, Am and Dm', 'Triads around the circle of fourths', 'Dominant sevenths around the circle']);
+const BASS_FRETS = new Set(['E and A strings', 'D and G strings', '1-2-3-4 across the strings', '1-3-2-4 and 4-2-3-1', '1-2-4-3 in sixteenths', 'Diagonal string crossing', 'Spider walk']);
+function allKeysHint(P) {
+  if (!/^1\.A?\d+[a-z]?$/.test(P.num)) return '';
+  const t = String(P.t).replace(/<[^>]+>/g, '');
+  if (BASS_FRETS.has(t)) return '<br><b>Mastered? Now play it at every fret.</b>';
+  if (BASS_NOKEYS.has(t) || / major, \d+(st|nd|rd|th) position$/.test(t) && / and /.test(t)) return '';
+  return '<br><b>Mastered? Now play it in all keys with − and +.</b>';
+}
+
 // Piano Groove Player (prueba del capítulo piloto). Usa PIANO (pianoeng.js), BOOK (data.js), INSTS (insts.js), ASSETS (drums.js).
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -13,6 +26,9 @@ const mute = {rh: false, lh: false, dr: false, bs: false, kb: false, gt: false};
 let METRO = false, COUNTIN = true;
 try { const o = JSON.parse(localStorage.getItem('pg-opts') || '{}'); if (o.s) SOUND = o.s; if ('m' in o) METRO = o.m; if ('c' in o) COUNTIN = o.c; } catch (e) {}
 // vista (bajo y guitarra): 'all' partitura+TAB+mástil · 'nt' partitura+TAB · 'tab' solo TAB · 'neck' solo mástil
+// bajo de 4, 5 o 6 cuerdas: la app recalcula TAB, digitación y mástil para ese bajo (se recuerda en este dispositivo)
+let STRN = 4; try { STRN = +localStorage.getItem('bg-strings') || 4; } catch (e) {} if (![4, 5, 6].includes(STRN)) STRN = 4;
+if (MODE === 'bass' && PIANO.setBassStrings) PIANO.setBassStrings(STRN);
 let VIEW = 'all'; try { VIEW = localStorage.getItem('pg-view-' + (typeof BOOK_MODE !== 'undefined' ? BOOK_MODE : 'piano')) || 'all'; } catch (e) {}
 const VIEWS = [['all', 'All'], ['nt', 'Notes + TAB'], ['tab', 'TAB'], ['neck', 'Neck']];
 function setView(v) { VIEW = v; try { localStorage.setItem('pg-view-' + MODE, v); } catch (e) {} applyView(); drawScore(); drawKbd(); fitTop(); }
@@ -63,16 +79,84 @@ function openLib(n, lv) {
   LEVEL = CH.levels.some(L => L.n === lv) ? lv : CH.levels[0].n; PI = ALL.findIndex(p => p.lv === LEVEL); TR = 0; TPCT = 1; NOTES = null;
   chapterView(); window.scrollTo(0, 0);
 }
+// ---------------- más libros de la serie (solo en la biblioteca; sin avisos emergentes)
+const MORE_BOOKS = [
+  {id: 'drums', t: 'Drum Grooves for Every Style', d: '1,180 grooves and 152 fills in 35+ styles.', img: '61xa6mcngHL', asin: 'B0HP8SHVFF'},
+  {id: 'piano', t: 'Piano Grooves for Every Style', d: '508 patterns for both hands in 16 styles.', img: '71A6UwegwTL', asin: 'B0HPZWMLG2'},
+  {id: 'guitar', t: 'Guitar Grooves for Every Style', d: '527 guitar parts in notation and TAB, 16 styles.', img: '714mbPBKc5L', asin: 'B0HQ13N24B'},
+  {id: 'bass', t: 'Bass Grooves for Every Style', d: '523 bass lines in notation and TAB, with slap.', img: null, asin: null},
+  {id: 'read', t: 'Learn to Read Music in a Month', d: 'Read sheet music from scratch in 30 days.', img: '71qFEW194pL', asin: 'B0HP8NTHB8', asinIntl: 'B0HMX7DY9M'},
+];
+function amazonStore() {
+  let tz = '', lang = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+  try { lang = (navigator.languages || [navigator.language]).join(',').toLowerCase(); } catch (e) {}
+  const TZ = {'Europe/Madrid': 'es', 'Europe/Lisbon': 'es', 'Atlantic/Madeira': 'es', 'Atlantic/Azores': 'es', 'Europe/Warsaw': 'pl', 'Europe/Stockholm': 'se', 'Atlantic/Canary': 'es', 'Africa/Ceuta': 'es', 'Europe/Berlin': 'de', 'Europe/Vienna': 'de', 'Europe/Zurich': 'de', 'Europe/Busingen': 'de',
+    'Europe/Paris': 'fr', 'Europe/Brussels': 'be', 'Europe/Luxembourg': 'fr', 'Europe/Monaco': 'fr', 'Europe/Rome': 'it', 'Europe/San_Marino': 'it', 'Europe/Vatican': 'it',
+    'Europe/London': 'uk', 'Europe/Dublin': 'ie', 'Europe/Amsterdam': 'nl', 'Asia/Tokyo': 'jp'};
+  let s = TZ[tz];
+  if (!s && /^Australia\//.test(tz)) s = 'au';
+  if (!s && /^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|St_Johns|Regina|Montreal|Moncton|Whitehorse|Yellowknife|Iqaluit)$/.test(tz)) s = 'ca';
+  if (!s) { const m = lang.match(/\b(en-gb|en-ie|es-es|pt-pt|fr-be|nl-be|de|fr-fr|it|nl-nl|pl|sv|ja)\b/); s = m ? {'en-gb': 'uk', 'en-ie': 'ie', 'pt-pt': 'es', 'fr-be': 'be', 'nl-be': 'be', pl: 'pl', sv: 'se', 'es-es': 'es', de: 'de', 'fr-fr': 'fr', it: 'it', 'nl-nl': 'nl', ja: 'jp'}[m[1]] : 'us'; }
+  const DOM = {us: 'amazon.com', uk: 'amazon.co.uk', es: 'amazon.es', de: 'amazon.de', fr: 'amazon.fr', it: 'amazon.it', nl: 'amazon.nl', jp: 'amazon.co.jp', ca: 'amazon.ca', au: 'amazon.com.au', ie: 'amazon.ie', be: 'amazon.com.be', pl: 'amazon.pl', se: 'amazon.se'};
+  return {s, dom: DOM[s]};
+}
+function moreBooks() {
+  const me = (typeof BOOK_ID !== 'undefined') ? BOOK_ID : MODE;
+  const st = amazonStore(), label = 'Amazon.' + st.dom.slice(7);
+  const items = MORE_BOOKS.filter(b => b.id !== me && b.asin && (!b.only || b.only.includes(st.s))).map(b => {
+    const asin = (b.asinIntl && st.s !== 'us' && st.s !== 'ca') ? b.asinIntl : b.asin;
+    const url = 'https://www.' + st.dom + '/dp/' + asin;
+    return `<div class="mb"><a class="mbc" href="${url}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">${b.img ? `<img src="https://m.media-amazon.com/images/I/${b.img}._SL240_.jpg" alt="" loading="lazy" onerror="this.remove()">` : ''}</a><div class="mbt"><b>${esc(b.t)}</b><span>${esc(b.d)}</span><a class="btn mbb" href="${url}" target="_blank" rel="noopener" data-mb="${b.id}">View on ${label}</a></div></div>`;
+  }).join('');
+  if (!items) return '';
+  if (!document.getElementById('mbcss')) { const c = document.createElement('style'); c.id = 'mbcss';
+    c.textContent = '.more{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}.more summary{cursor:pointer;font-weight:700;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}.more summary::-webkit-details-marker{display:none}.more summary::after{content:"+";font:400 22px var(--body);color:var(--accent)}.more[open] summary::after{content:"−"}.more summary small{display:block;font-weight:400;color:var(--muted);font-size:13px}.mbl{display:grid;gap:10px;margin-top:10px}.mb{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}.mbc{flex:none;width:58px;height:75px;border-radius:3px;background:var(--cell);overflow:hidden}.mbc img{width:100%;height:100%;object-fit:cover;display:block}.mbt{display:grid;gap:3px;min-width:0}.mbt span{color:var(--muted);font-size:13.5px}.mbb{justify-self:start;margin-top:4px;padding:8px 14px;font-size:13px;text-decoration:none}';
+    document.head.appendChild(c); }
+  return `<details class="more"><summary><span>More books with this app<small>Same Groove Player, other instruments.</small></span></summary><div class="mbl">${items}</div></details>`;
+}
+function wireMoreBooks() {
+  document.querySelectorAll('[data-mb]').forEach(a => a.addEventListener('click', () => { try { if (typeof gcEvt === 'function') gcEvt(MODE + ': more books click ' + a.dataset.mb + ' ' + a.href.replace(/^https:\/\/www\./, '')); } catch (e) {} }));
+  const d = document.querySelector('details.more'); if (d) d.addEventListener('toggle', () => { try { if (d.open && typeof gcEvt === 'function') gcEvt(MODE + ': more books open'); } catch (e) {} });
+}
+// ---------------- reseña en Amazon: fila fija en la biblioteca y tarjeta visible (una vez; «Not now» vuelve a las 2 semanas, máx. 3)
+const STAR = '<svg class="rstar" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg><i class="rsp a"></i><i class="rsp b"></i>';
+function rateSt() { let r = {}; try { r = JSON.parse(localStorage.getItem('dm-rate') || '{}'); } catch (e) {} if (!r.first) { r.first = Date.now(); rateSave(r); } return r; }
+function rateSave(r) { try { localStorage.setItem('dm-rate', JSON.stringify(r)); } catch (e) {} }
+function rateUrl() { const me = (typeof BOOK_ID !== 'undefined') ? BOOK_ID : MODE, b = MORE_BOOKS.find(x => x.id === me); if (!b || !b.asin) return null;
+  const st = amazonStore(), asin = (b.asinIntl && st.s !== 'us' && st.s !== 'ca') ? b.asinIntl : b.asin; return 'https://www.' + st.dom + '/review/create-review?asin=' + asin; }
+function rateCss() { if (document.getElementById('rtcss')) return; const c = document.createElement('style'); c.id = 'rtcss';
+  c.textContent = '@keyframes rshine{0%,100%{transform:scale(1) rotate(0);filter:drop-shadow(0 0 3px #ffd34d)}50%{transform:scale(1.12) rotate(8deg);filter:drop-shadow(0 0 10px #ffd34d)}}@keyframes rtw{0%,100%{opacity:0;transform:scale(.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}' +
+    '.rs{position:relative;width:46px;height:46px;flex:none;display:grid;place-items:center}.rstar{width:40px;height:40px;fill:#ffc83d;stroke:#fff3c4;stroke-width:.8;animation:rshine 2.4s ease-in-out infinite}' +
+    '.rsp{position:absolute;width:9px;height:9px;background:#fff3c4;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);animation:rtw 2.4s ease-in-out infinite}.rsp.a{top:0;right:2px;animation-delay:.3s}.rsp.b{bottom:3px;left:0;animation-delay:1.2s}' +
+    '.rcard{border:1px solid var(--accent);border-radius:14px;padding:14px;background:var(--panel);display:grid;gap:12px;margin-bottom:6px}.rcard .rt{display:flex;gap:12px;align-items:flex-start}.rcard b{font:700 19px var(--display)}.rcard p{margin:3px 0 0;color:var(--muted);font-size:14px}' +
+    '.rcard .rb{display:flex;gap:8px;flex-wrap:wrap}.rcard .rb a{flex:1;justify-content:center;text-decoration:none;min-height:44px}.rcard .rb button{min-height:44px}.rrow{display:flex;gap:12px;align-items:center;margin-top:12px;border-top:1px solid var(--line);padding-top:12px;text-decoration:none;color:inherit}.rrow .rs{width:34px;height:34px}.rrow .rstar{width:28px;height:28px}.rrow span{display:grid;gap:2px}.rrow small{color:var(--muted)}';
+  document.head.appendChild(c); }
+function rateCard() { const url = rateUrl(); if (!url) return ''; const r = rateSt(); if (r.done && !/[?&]rate=1/.test(location.search)) return '';
+  const chs = Object.values(LIB).filter(c => !c.demo && !c.lib).length, days = (Date.now() - r.first) / 864e5;
+  const due = /[?&]rate=1/.test(location.search) || ((chs >= 3 || days >= 5) && (r.n || 0) < 3 && (!r.snooze || Date.now() > r.snooze));
+  if (!due) return ''; rateCss();
+  return `<div class="rcard" id="rcard"><div class="rt"><span class="rs">${STAR}</span><span><b>Enjoying the book?</b><p>Every review helps us keep making books and apps like this one. Thank you, we really appreciate it!</p></span></div>
+    <div class="rb"><a class="btn" id="rgo" href="${url}" target="_blank" rel="noopener">Write a review</a><button class="btn ghost" id="rno">Not now</button><button class="btn ghost" id="rdid">I already did</button></div></div>`; }
+function rateRow() { const url = rateUrl(); if (!url) return ''; rateCss(); return `<a class="rrow" id="rrow" href="${url}" target="_blank" rel="noopener"><span class="rs">${STAR}</span><span><b>Rate this book on Amazon</b><small>Every review helps us keep making books like this one.</small></span></a>`; }
+function wireRate() { const ev = t => { try { if (typeof gcEvt === 'function') gcEvt(MODE + ': review ' + t); } catch (e) {} };
+  const done = t => { const r = rateSt(); r.done = 1; rateSave(r); ev(t); const c = $('rcard'); if (c) c.remove(); };
+  const g = $('rgo'); if (g) g.addEventListener('click', () => done('click'));
+  const d = $('rdid'); if (d) d.onclick = () => done('already');
+  const no = $('rno'); if (no) no.onclick = () => { const r = rateSt(); r.n = (r.n || 0) + 1; r.snooze = Date.now() + 14 * 864e5; rateSave(r); ev('not now'); const c = $('rcard'); if (c) c.remove(); };
+  const w = $('rrow'); if (w) w.addEventListener('click', () => ev('menu click'));
+  if ($('rcard')) ev('card shown'); }
 function library() {
   stop(); CH = null;
   const chs = Object.values(LIB).sort((a, b) => (a.lib ? 999 : a.n) - (b.lib ? 999 : b.n));
   const items = chs.map(c => { const n = c.levels.reduce((a, L) => a + L.sections.reduce((x, S) => x + S.patterns.length, 0), 0);
     return `<button class="sec chb" data-n="${c.n}"><span class="sw l${c.lib ? 4 : 2}"></span><span><b>${c.lib ? '' : '<span class="n">' + c.n + '</span> '}${esc(c.title)}${c.demo ? ' <small class="demo">SAMPLE</small>' : ''}</b><span>${n} patterns${c.sub ? ' · ' + esc(c.sub) : ''}</span></span></button>`; }).join('');
   const total = Object.keys(CHAPTERS).filter(k => k !== 'lib' && !(k.endsWith('2') && CHAPTERS[k.slice(0, -1)])).length;
-  $('view').innerHTML = `<h2>Your library</h2>${items ? `<div class="list">${items}</div>` : ''}
+  $('view').innerHTML = `${rateCard()}<h2>Your library</h2>${items ? `<div class="list">${items}</div>` : ''}
     <div class="empty"><svg viewBox="0 0 24 24"><path d="M4 4h5v2H6v3H4V4zm11 0h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 3v-3h2v5h-5v-2h3zM8 8h3v3H8V8zm5 0h3v3h-3V8zm-5 5h3v3H8v-3zm5 0h3v3h-3v-3z"/></svg>
-    <p class="muted">${Object.values(LIB).filter(c => !c.demo).length ? 'Add more chapters' : 'Add your first chapter'}: point your camera at the code on the <b>first page of any chapter</b> of the book, or tap <b>Scan a code</b>.<br>${Object.values(LIB).filter(c => !c.demo && !c.lib).length} of ${total} chapters added.</p></div>`;
+    <p class="muted">${Object.values(LIB).filter(c => !c.demo).length ? 'Add more chapters' : 'Add your first chapter'}: point your camera at the code on the <b>first page of any chapter</b> of the book, or tap <b>Scan a code</b>.<br>${Object.values(LIB).filter(c => !c.demo && !c.lib).length} of ${total} chapters added.</p></div>${moreBooks()}${rateRow()}`;
   document.querySelectorAll('.chb').forEach(b => b.onclick = () => openLib(+b.dataset.n, 1));
+  wireMoreBooks(); wireRate();
 }
 function chapterView() { home(); }
 // ---------------- vistas
@@ -101,10 +185,11 @@ function renderPlayer() {
   <input type="range" id="tempo" min="30" max="220" value="${T0}" aria-label="Tempo">
   <div class="steps"><button data-f=".5">50%</button><button data-f=".75">75%</button><button data-f=".9">90%</button><button data-f="1">100%</button><button data-d="-4">−4</button><button data-d="4">+4</button></div></div></div>
   <div class="keyrow"><span>Key</span><button id="kdn" aria-label="Transpose down">−</button><b id="kname">${esc(keyName())}</b><button id="kup" aria-label="Transpose up">+</button><button id="k0" class="ghostb">Original key</button></div>
+  ${MODE === 'bass' && PIANO.setBassStrings ? `<div class="keyrow strrow" role="group" aria-label="Strings on your bass"><span>Your bass</span>${[4, 5, 6].map(k => `<button class="ghostb" data-sn="${k}" aria-pressed="${STRN === k}">${k} strings</button>`).join('')}</div>` : ''}
   <div class="mix chs">${MODE === 'guitar' ? chan('gt', UKE ? 'Ukulele' : 'Guitar') + chan('dr', 'Drums') + chan('bs', 'Bass') : MODE === 'bass' ? chan('bs', 'Bass') + chan('dr', 'Drums') + chan('kb', 'Keys') : chan('rh', 'Right hand') + chan('lh', 'Left hand') + chan('dr', 'Drums') + chan('bs', 'Bass')}</div>
   <div class="opts">${MODE !== 'piano' ? '' : `<label><input type="radio" name="snd" value="piano" ${SOUND === 'piano' ? 'checked' : ''}><span>Acoustic piano</span></label><label><input type="radio" name="snd" value="ep" ${SOUND === 'ep' ? 'checked' : ''}><span>Electric piano</span></label>`}<label><input type="checkbox" id="metro" ${METRO ? 'checked' : ''}><span>Metronome</span></label><label><input type="checkbox" id="countin" ${COUNTIN ? 'checked' : ''}><span>Count-in</span></label></div>
   <div class="syncrow"><span>Sync</span><button id="sydn" aria-label="Show the score earlier">−</button><b id="syval">${SYNC > 0 ? '+' : ''}${SYNC} ms</b><button id="syup" aria-label="Show the score later">+</button><small>If the moving bar runs ahead of the sound, press +; if it lags behind, press −.</small></div>
-  <p class="tip">${esc(P.tip)}</p>
+  <p class="tip">${esc(P.tip)}${MODE === 'bass' ? allKeysHint(P) : ''}</p>
   <div class="rail" id="rail" aria-label="Quick controls">
     <button id="rplay" class="rbig" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg></button>
     <div class="rrow"><button id="rprev" aria-label="Previous pattern">‹</button><button id="rnext" aria-label="Next pattern">›</button></div>
@@ -129,6 +214,8 @@ function renderPlayer() {
   const mv = d => { const was = playing; stop(); const lst = ALL.filter(p => p.lv === LEVEL); const k = (lst.indexOf(P) + d + lst.length) % lst.length; PI = ALL.indexOf(lst[k]); home(); if (was) play(); };
   $('gprev').onclick = () => mv(-1); $('gnext').onclick = () => mv(1);
   const tr = d => { TR = d === 0 ? 0 : Math.max(-6, Math.min(6, TR + d)); if (TR === 6 && d > 0) TR = 6; $('kname').textContent = keyName(); NOTES = null; drawScore(); };
+  document.querySelectorAll('[data-sn]').forEach(b => b.onclick = () => { STRN = +b.dataset.sn; try { localStorage.setItem('bg-strings', STRN); } catch (e) {} PIANO.setBassStrings(STRN);
+    document.querySelectorAll('[data-sn]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.sn === STRN)); NOTES = null; drawScore(); });
   $('kdn').onclick = () => tr(-1); $('kup').onclick = () => tr(1); $('k0').onclick = () => tr(0);
   document.querySelectorAll('input[name=snd]').forEach(r => r.onchange = () => { SOUND = r.value; saveOpts(); });
   $('metro').onchange = e => { METRO = e.target.checked; saveOpts(); $('qmet').setAttribute('aria-pressed', METRO); };
@@ -314,13 +401,13 @@ function drawFret() {
   const NF = Math.min(24, maxF + 1); FBNF = NF; const sx = f => 3 + f * 94 / NF; let h = '';
   for (let f = 0; f <= NF; f++) h += `<line x1="${sx(f)}%" y1="10%" x2="${sx(f)}%" y2="84%" class="${f ? 'fw' : 'nut'}"/>`;   // los trastes acaban en la primera y la última cuerda
   [3, 5, 7, 9, 12, 15, 17, 19, 21, 24].filter(f => f <= NF).forEach(f => h += `<circle cx="${sx(f - 0.5)}%" cy="47%" r="3.5" class="fdot"/>`);
-  const NSx = MODE === 'guitar' && !UKE ? 6 : 4, dy = 74 / (NSx - 1);
-  for (let st = 0; st < NSx; st++) h += `<line x1="${sx(0)}%" y1="${84 - st * dy}%" x2="97%" y2="${84 - st * dy}%" class="str" style="stroke-width:${UKE ? 1.9 : (MODE === 'guitar' ? 2.2 : 2.6) - st * (MODE === 'guitar' ? 0.32 : 0.45)}"/>`;
+  const NSx = MODE === 'guitar' && !UKE ? 6 : MODE === 'bass' ? STRN : 4, dy = 74 / (NSx - 1);
+  for (let st = 0; st < NSx; st++) h += `<line x1="${sx(0)}%" y1="${84 - st * dy}%" x2="97%" y2="${84 - st * dy}%" class="str" style="stroke-width:${UKE ? 1.9 : MODE === 'bass' ? (NSx === 4 ? 2.6 - st * 0.45 : 3.0 - st * (1.8 / (NSx - 1))) : 2.2 - st * 0.32}"/>`;
   const used = new Set(); if (FRETS) for (const [nt, fr] of FRETS.entries()) if (fr && !(GDIAG && (CHFR.has(nt) || ARP.has(nt)))) (Array.isArray(fr[0]) ? fr : [fr]).forEach(q => q && used.add(q[0] + '_' + q[1]));
-  for (let st = 0; st < NSx; st++) for (let f = 0; f <= NF; f++) h += `<circle id="f${st}_${f}" cx="${f ? sx(f - 0.5) : 1.5}%" cy="${84 - st * dy}%" r="${(MODE === 'guitar' && !UKE ? 5.5 : 7) * (NF > 16 ? 0.8 : 1)}" class="fn${used.has(st + '_' + f) ? ' used' : ''}"/>`;
+  for (let st = 0; st < NSx; st++) for (let f = 0; f <= NF; f++) h += `<circle id="f${st}_${f}" cx="${f ? sx(f - 0.5) : 1.5}%" cy="${84 - st * dy}%" r="${(MODE === 'guitar' && !UKE ? 5.5 : MODE === 'bass' && STRN > 4 ? 6.2 : 7) * (NF > 16 ? 0.8 : 1)}" class="fn${used.has(st + '_' + f) ? ' used' : ''}"/>`;
   for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24].filter(f => f <= NF)) h += `<text x="${sx(f - 0.5)}%" y="100%" text-anchor="middle" class="kl">${f}</text>`;
   if (GDIAG) h += '<g id="chd"></g>';
-  box.innerHTML = `<svg width="100%" height="${MODE === 'guitar' && !UKE ? 104 : 90}" aria-hidden="true">${h}</svg>`;
+  box.innerHTML = `<svg width="100%" height="${MODE === 'guitar' && !UKE ? 104 : MODE === 'bass' ? [0, 0, 0, 0, 90, 100, 110][STRN] : 90}" aria-hidden="true">${h}</svg>`;
   if (GDIAG) showChord([...CHFR.values()][0] || [...ARP.values()].filter(v => Array.isArray(v))[0] || null, 0);
 }
 // guitarra (prueba): el acorde se ve como diagrama completo en el mástil (cejilla incluida) y late con cada rasgueo
@@ -549,3 +636,211 @@ let _rz = null;
 if ('serviceWorker' in navigator && /^https:$/.test(location.protocol) && !/claude|claudeusercontent/.test(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {});
 // guitarra: al girar el móvil, se recoloca la partitura (2 compases por línea en vertical)
 if (MODE !== 'bass') { let wasN = innerWidth < 700; addEventListener('resize', () => { const n = innerWidth < 700; if (n !== wasN && !playing && $('score')) { wasN = n; drawScore(); } }); }
+
+
+window.ACT_CFG = {"book": "bass", "store": "pg-codes", "thumbs": "act/", "boxes": {"75": [71.7, 17.6, 11.0, 8.4], "88": [71.6, 17.6, 11.0, 8.4], "98": [71.8, 11.4, 10.9, 8.4], "107": [71.8, 11.4, 10.9, 8.4], "118": [71.8, 13.3, 10.9, 8.4], "128": [71.5, 13.3, 11.0, 8.4], "138": [71.8, 11.4, 10.9, 8.4], "148": [71.6, 13.3, 11.0, 8.4], "157": [71.6, 11.4, 11.0, 8.4], "166": [71.8, 17.6, 10.9, 8.4], "176": [71.6, 19.5, 11.0, 8.4], "186": [71.8, 19.5, 10.9, 8.4], "196": [71.6, 13.3, 11.0, 8.4], "206": [71.8, 13.3, 10.9, 8.4]}, "open": ["technique"], "ask": [{"sid": "blues", "ch": 5, "page": 75, "title": "Blues and Shuffle"}, {"sid": "neosoul", "ch": 6, "page": 88, "title": "Hip-Hop and Neo-Soul"}, {"sid": "gospel", "ch": 7, "page": 98, "title": "Gospel"}, {"sid": "jazz", "ch": 8, "page": 107, "title": "Jazz"}, {"sid": "nola", "ch": 9, "page": 118, "title": "New Orleans"}, {"sid": "country", "ch": 10, "page": 128, "title": "Country"}, {"sid": "reggae", "ch": 11, "page": 138, "title": "Reggae and Ska"}, {"sid": "afrocuban", "ch": 12, "page": 148, "title": "Afro-Cuban"}, {"sid": "brazil", "ch": 13, "page": 157, "title": "Brazilian"}, {"sid": "latin", "ch": 14, "page": 166, "title": "Tango and Latin Pop"}, {"sid": "afrobeat", "ch": 15, "page": 176, "title": "Afrobeat and Highlife"}, {"sid": "disco", "ch": 16, "page": 186, "title": "Disco, House and EDM"}, {"sid": "metal", "ch": 17, "page": 196, "title": "Metal and Punk"}, {"sid": "slap", "ch": 18, "page": 206, "title": "Slap Bass"}]};
+
+// ---------------- activación del libro (una sola vez por dispositivo) ----------------
+// El primer código fuera de la muestra no abre nada todavía: la app pide escanear (dentro de la app)
+// el código de una página concreta del libro, elegida al azar entre capítulos que no salen en la
+// vista previa de Amazon. Al escanearlo, se desbloquea todo. Quien ya tenía capítulos guardados
+// se da por activado, así que los clientes actuales no ven nada nuevo.
+(function () {
+  const A = window.ACT_CFG; if (!A) return;
+  const KEY = 'act-' + A.book, LS = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }};
+  const RE = A.re ? new RegExp(A.re) : /(?:PG1|BG1|GG1|UK1|FS1)\.(\w+)\.([\w-]{16,})(?:\.L(\d))?/;
+  const sidOf = t => { let u = t || ''; try { u = decodeURIComponent(u); } catch (e) {} const m = RE.exec(u); return m ? m[1] : null; };
+  let st = LS.get(KEY, null);
+  const free = sid => A.open.includes(sid);
+  if (!st) { let had = false;                                // ¿ya usaba la app con el libro? (códigos guardados que no son de la muestra)
+    try { const v = JSON.parse(localStorage.getItem(A.store) || '{}');
+      had = Array.isArray(v) ? v.some(t => { const s = sidOf(t); return !!s && !free(s); }) : Object.keys(v || {}).length > 0; } catch (e) {}
+    st = {done: had}; LS.set(KEY, st); }
+  let SRC = 'link';                                          // 'scan' solo cuando el código entra por el escáner de la app
+  window.ACT_SCANNED = t => { SRC = 'scan'; return handleCode(t, true); };
+  const fileIn = document.getElementById('cam');
+  if (fileIn) fileIn.addEventListener('change', () => { SRC = 'scan'; }, true);
+  const orig = handleCode;
+  handleCode = async function (txt, ...rest) {
+    const src = SRC; SRC = 'link';
+    const sid = sidOf(txt);
+    if (st.done || !sid || free(sid)) return orig(txt, ...rest);
+    // lectura: la página se pide de la misma edición (EE. UU. / Reino Unido) que el código abierto
+    if (!st.ask) { const pool = (A.pool && A.pools && A.pools[A.pool(sid)]) || A.ask; st.ask = pool[Math.floor(Math.random() * pool.length)]; LS.set(KEY, st); }
+    if (src === 'scan' && sid === st.ask.sid) {              // código pedido, escaneado con el libro delante
+      st.done = true; LS.set(KEY, st); close();
+      const pend = st.pending || []; delete st.pending; LS.set(KEY, st);
+      for (const p of pend) if (sidOf(p) !== sid) { try { await orig(p, true); } catch (e) {} }
+      const ok = await orig(txt, ...rest); toast('Your book is activated. Enjoy!'); return ok;
+    }
+    if (sid !== st.ask.sid || src !== 'scan') { const p = st.pending || []; if (!p.some(x => sidOf(x) === sid)) p.push(txt); st.pending = p.slice(-6); LS.set(KEY, st); }
+    const wrong = src === 'scan' && sid !== st.ask.sid && !!st.shown; st.shown = true; LS.set(KEY, st); show(wrong); return false;
+  };
+  let ov = null;
+  function close() { if (ov) { ov.remove(); ov = null; } }
+  function show(wrong) {
+    close(); const q = st.ask, dir = A.thumbs || 'act/', img = typeof q.img === 'string' ? q.img : q.img !== false ? dir + 'p' + String(q.page).padStart(3, '0') + '.jpg' : '';
+    if (!document.getElementById('act-css')) { const s = document.createElement('style'); s.id = 'act-css';
+      s.textContent =
+        '#act-ov{position:fixed;inset:0;z-index:9998;background:rgba(8,7,6,.86);padding:14px;overflow:auto;display:flex}' +
+        '#act-box{background:var(--panel,#1e1c19);color:var(--fg,#f2eadb);border:1px solid var(--line,#34302a);border-radius:20px;max-width:520px;width:100%;margin:auto;padding:22px 20px 16px;box-shadow:0 20px 60px rgba(0,0,0,.6);font-family:var(--body,system-ui)}' +
+        '#act-box .eb{font:700 12px/1 var(--body,system-ui);letter-spacing:.2em;text-transform:uppercase;color:var(--accent,#c9a25a);text-align:center}' +
+        '#act-box h2{font:700 34px/1 var(--display,system-ui);text-transform:uppercase;letter-spacing:.02em;margin:10px 0 16px;text-align:center}#act-box h2 span{display:block;color:var(--accent,#c9a25a);font-size:64px;line-height:.95;margin-top:2px}' +
+        '#act-wrong{background:#5a1f1a;color:#ffd9d2;border-radius:12px;padding:10px 12px;margin:0 0 14px;font-weight:700;text-align:center}' +
+        '#act-vis{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;background:#15130f;border-radius:16px;padding:14px}' +
+        '#act-th{position:relative;border-radius:6px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.5);background:#fff;aspect-ratio:621/810}' +
+        '#act-th img{display:block;width:100%;height:100%}' +
+        '#act-th i{position:absolute;border:3px solid var(--accent,#c9a25a);border-radius:5px;box-shadow:0 0 0 3px rgba(201,162,90,.35);animation:actp 1.4s ease-in-out infinite}' +
+        '#act-th b{position:absolute;background:var(--accent,#c9a25a);color:#121110;font:700 10px/1 var(--body,system-ui);padding:4px 6px;border-radius:5px;white-space:nowrap}' +
+        '@keyframes actp{50%{box-shadow:0 0 0 7px rgba(201,162,90,.15)}}' +
+        '#act-pg small{display:block;color:var(--muted,#8f8676);font-size:14px;line-height:1.3}' +
+        '#act-pg strong{display:block;font:700 34px/1 var(--display,system-ui);color:var(--fg,#f2eadb);text-transform:uppercase;margin:6px 0 4px}#act-pg .tip{margin-top:10px;color:var(--accent,#c9a25a)}' +
+        '#act-steps{list-style:none;margin:16px 0 4px;padding:0;display:grid;gap:10px}' +
+        '#act-steps li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:center;font-size:16px;line-height:1.35}' +
+        '#act-steps li span{width:30px;height:30px;border-radius:50%;background:var(--accent,#c9a25a);color:#121110;font-weight:700;display:grid;place-items:center}' +
+        '#act-box .go{display:flex;align-items:center;justify-content:center;gap:10px;font:700 19px/1 var(--body,system-ui);padding:17px;border-radius:14px;border:0;background:var(--accent,#c9a25a);color:#121110;width:100%;margin-top:16px;cursor:pointer}' +
+        '#act-box .go svg{width:24px;height:24px;fill:currentColor}' +
+        '#act-box .lnk{display:block;margin:8px auto 0;background:none;border:0;color:var(--muted,#8f8676);font:500 14px var(--body,system-ui);padding:8px;cursor:pointer}' +
+        '#act-box .help{text-align:center;font-size:13px;color:var(--muted,#8f8676);margin:2px 0 0}' +
+        '@media (max-width:420px){#act-box{padding:18px 14px 12px}#act-vis{grid-template-columns:118px 1fr;gap:12px;padding:12px}#act-pg strong{font-size:28px}#act-box h2{font-size:28px;margin-bottom:12px}#act-box h2 span{font-size:54px}#act-steps li{font-size:15px}}';
+      document.head.appendChild(s); }
+    const B = q.box || (A.boxes || {})[q.page] || [71.7, 16, 11, 8.5], U = A.unit || 'Chapter';
+    const thumb = img ? '<div id="act-th"' + (A.aspect ? ' style="aspect-ratio:' + A.aspect + '"' : '') + '><img src="' + img + '" alt="Page ' + q.page + ' of your book" onerror="this.parentNode.style.display=\'none\'">' +
+      '<i style="left:' + B[0] + '%;top:' + B[1] + '%;width:' + B[2] + '%;height:' + B[3] + '%"></i>' +
+      '<b style="right:' + Math.max(3, 100 - B[0] - B[2]) + '%;top:' + (B[1] + B[3] + 2) + '%">SCAN THIS</b></div>' : '';
+    ov = document.createElement('div'); ov.id = 'act-ov';
+    ov.innerHTML = '<div id="act-box" role="dialog" aria-label="Activate your book">' +
+      '<div class="eb">One-time step · Activate your book</div><h2>Now scan<span>page ' + q.page + '</span></h2>' +
+      (wrong ? '<p id="act-wrong">That is a different code. Look for page ' + q.page + '.</p>' : '') +
+      '<div id="act-vis">' + thumb + '<div id="act-pg"><small>Page ' + q.page + ' is the first page of</small><strong>' + U + ' ' + q.ch + '</strong><small>' + q.title + '</small><small class="tip">The code is at the top, in the gold box.</small></div></div>' +
+      '<ol id="act-steps"><li><span>1</span><div>Open the book at page ' + q.page + '.</div></li>' +
+      '<li><span>2</span><div>Tap <b>Scan the code</b> below.</div></li>' +
+      '<li><span>3</span><div>Point the camera at the code in the gold box. Done: the whole book opens.</div></li></ol>' +
+      '<button type="button" class="go" data-a="scan"><svg viewBox="0 0 24 24"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>Scan the code</button>' +
+      '<button type="button" class="lnk" data-a="later">Not now</button>' +
+      '<p class="help">Only needed once on this device. Help: hello@dibidup.com</p></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.a === 'later') return close();
+      close(); if (window.camScanOpen) window.camScanOpen(); else if (fileIn) fileIn.click(); });
+  }
+})();
+
+
+// ---------------- lectura de la foto del código, más robusta ----------------
+// 1) el lector de códigos del propio sistema (Android/Chrome), si existe;
+// 2) jsQR sobre la foto entera a varios tamaños (también más grande que antes);
+// 3) jsQR por trozos a resolución completa: el código del libro es pequeño dentro de la foto de la página.
+readImage = async function (src) {
+  const img = new Image(); img.src = src; await img.decode();
+  const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+  try {
+    if ('BarcodeDetector' in window) {
+      const fm = await BarcodeDetector.getSupportedFormats(); if (fm.includes('qr_code')) {
+        const r = await new BarcodeDetector({formats: ['qr_code']}).detect(img); if (r && r.length && r[0].rawValue) return r[0].rawValue; } }
+  } catch (e) {}
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d', {willReadFrequently: true});
+  const tryRect = (sx, sy, sw, sh, max, inv) => {
+    const k = Math.min(max / Math.max(sw, sh), 3); const w = Math.max(1, Math.round(sw * k)), h = Math.max(1, Math.round(sh * k));
+    cv.width = w; cv.height = h; cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high'; cx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+    const r = jsQR(cx.getImageData(0, 0, w, h).data, w, h, {inversionAttempts: inv || 'dontInvert'}); return r && r.data; };
+  const pause = () => new Promise(r => setTimeout(r, 0));
+  for (const max of [1400, 900, 2000, 2800]) { const v = tryRect(0, 0, W, H, max); if (v) return v; await pause(); }
+  for (const n of [2, 3]) {                       // trozos solapados: cada uno a ~1400 px
+    const tw = W / n * 1.5, th = H / n * 1.5;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const sx = Math.max(0, Math.min(W - tw, (W - tw) * (n === 1 ? 0 : j / (n - 1)))), sy = Math.max(0, Math.min(H - th, (H - th) * (n === 1 ? 0 : i / (n - 1))));
+      const v = tryRect(sx, sy, Math.min(tw, W), Math.min(th, H), 1400); if (v) return v; await pause(); } }
+  for (const max of [1400, 900]) { const v = tryRect(0, 0, W, H, max, 'attemptBoth'); if (v) return v; }
+  return null;
+};
+
+window.CAMSCAN_CFG = {onCode: t => (window.ACT_SCANNED || handleCode)(t)};
+
+// ---------------- escáner con la cámara del ordenador ----------------
+// Lee el código en directo con la cámara (la trasera en el móvil, la webcam en el ordenador), en cuanto aparece,
+// como la cámara del sistema; si no hay cámara o se deniega el permiso, ofrece hacer o elegir una foto del código.
+(function () {
+  const CFG = window.CAMSCAN_CFG || {};
+  const ua = navigator.userAgent || '';
+  const phone = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const can = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof jsQR === 'function';
+  if (!can) return;
+  const dbg = t => (window.CAMSCAN_DBG || (() => {}))(t);
+  const fileInput = () => document.getElementById(CFG.input || 'cam');
+  let ov = null, stream = null, raf = 0, busy = false;
+  function css() {
+    if (document.getElementById('cs-css')) return;
+    const s = document.createElement('style'); s.id = 'cs-css';
+    s.textContent = '#cs-ov{position:fixed;inset:0;z-index:9999;background:rgba(10,12,16,.92);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit}' +
+      '#cs-box{background:#fff;color:#1a1d24;border-radius:14px;max-width:560px;width:100%;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.4);text-align:center}' +
+      '#cs-box h2{margin:0 0 6px;font-size:20px}#cs-box p{margin:6px 0 12px;font-size:15px;line-height:1.4;color:#3a3f4a}' +
+      '#cs-vw{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:4/3}' +
+      '#cs-vw video{width:100%;height:100%;object-fit:cover;' + (phone ? '' : 'transform:scaleX(-1);') + 'display:block}' +
+      '#cs-vw i{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}' +
+      '#cs-st{min-height:20px;font-size:14px;margin:10px 0 4px;color:#3a3f4a}' +
+      '#cs-bt{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px}' +
+      '#cs-bt button{font:inherit;font-size:15px;padding:10px 16px;border-radius:10px;border:1px solid #c9ced8;background:#f3f5f8;color:#1a1d24;cursor:pointer}' +
+      '#cs-bt button.pri{background:#1a1d24;color:#fff;border-color:#1a1d24}';
+    document.head.appendChild(s);
+  }
+  function close() {
+    cancelAnimationFrame(raf); raf = 0;
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (ov) { ov.remove(); ov = null; }
+  }
+  function photo() { close(); const i = fileInput(); if (i) i.click(); }
+  function status(t) { const e = document.getElementById('cs-st'); if (e) e.textContent = t; }
+  async function open() {
+    if (ov) return; css();
+    ov = document.createElement('div'); ov.id = 'cs-ov';
+    ov.innerHTML = '<div id="cs-box" role="dialog" aria-label="Scan a code"><h2>Scan a code</h2>' +
+      '<p>' + (phone ? 'Point the camera at the code, inside the frame. It is read automatically.' : 'Hold the book in front of your computer’s camera, with the code inside the frame. Keep it still for a moment.') + '</p>' +
+      '<div id="cs-vw"><video playsinline muted></video><i></i></div><div id="cs-st">Starting the camera…</div>' +
+      '<div id="cs-bt"><button type="button" data-a="photo">' + (phone ? 'Take a photo instead' : 'Use a photo of the code') + '</button><button type="button" class="pri" data-a="close">Cancel</button></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { const a = e.target.closest('button') && e.target.closest('button').dataset.a; if (a === 'close') close(); else if (a === 'photo') photo(); else if (e.target === ov) close(); });
+    document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
+    const v = ov.querySelector('video');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {width: {ideal: 1920}, height: {ideal: 1080}, facingMode: phone ? {ideal: 'environment'} : 'user'}});
+    } catch (e) {
+      status(e && e.name === 'NotAllowedError' ? 'The camera is blocked. Allow it in your browser (the camera icon in the address bar), or use a photo of the code.' : 'No camera was found on this computer. You can use a photo of the code instead.');
+      const vw = document.getElementById('cs-vw'); if (vw) vw.style.display = 'none'; return;
+    }
+    if (!ov) { stream.getTracks().forEach(t => t.stop()); stream = null; return; }
+    v.srcObject = stream; try { await v.play(); } catch (e) {}
+    status('Looking for the code…'); dbg('camera on ' + v.videoWidth + 'x' + v.videoHeight);
+    let BD = null; try { if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) BD = new BarcodeDetector({formats: ['qr_code']}); } catch (e) {}
+    const cv = document.createElement('canvas'), cx = cv.getContext('2d', {willReadFrequently: true});
+    let last = 0, n = 0;
+    const tick = async t => {
+      if (!ov) return; raf = requestAnimationFrame(tick);
+      if (busy || t - last < 120 || !v.videoWidth) return; last = t; n++;
+      const W = v.videoWidth, H = v.videoHeight;
+      // tres pasadas alternas: marco completo, centro ampliado y centro más ampliado
+      // (la webcam da poco detalle: ampliar el centro suaviza el ruido y agranda los módulos del código)
+      const P = [[0, 1, 1280], [0.2, 0.6, 1400], [0.3, 0.4, 1200]][n % 3];
+      const sx = W * P[0], sy = H * P[0], sw = W * P[1], sh = H * P[1];
+      const k = P[2] / Math.max(sw, sh); cv.width = Math.round(sw * k); cv.height = Math.round(sh * k);
+      cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+      cx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      let r = null; if (BD && n % 2) { busy = true; try { const d = await BD.detect(v); if (d && d.length && d[0].rawValue) r = {data: d[0].rawValue}; } catch (e) {} busy = false; if (!ov) return; }
+      if (!r) try { r = jsQR(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, {inversionAttempts: 'dontInvert'}); } catch (e) {}
+      if (r && r.data) {
+        busy = true; status('Code found!');
+        const data = r.data; close(); dbg('read: ' + data.slice(0, 60));
+        try { await CFG.onCode(data); } finally { busy = false; }
+      }
+    };
+    raf = requestAnimationFrame(tick);
+  }
+  document.addEventListener('click', e => {
+    if (e.target.closest('input')) return;   // el clic que abre el selector de fotos (input dentro de la etiqueta)
+    const b = e.target.closest(CFG.trigger || 'label[for="cam"]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation(); open();
+  }, true);
+  window.camScanOpen = open;
+})();
